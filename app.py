@@ -3,9 +3,16 @@ import re
 import pandas as pd
 import streamlit as st
 import plotly.express as px
-from wordcloud import WordCloud
 
-# ---------------- NLTK setup (safe import + auto-download) ----------------
+# ---------------- Optional imports with safe fallbacks ----------------
+# WordCloud import (optional)
+try:
+    from wordcloud import WordCloud
+    WORDCLOUD_AVAILABLE = True
+except Exception:
+    WORDCLOUD_AVAILABLE = False
+
+# NLTK import + safe setup
 try:
     import nltk
     from nltk.sentiment.vader import SentimentIntensityAnalyzer
@@ -22,21 +29,41 @@ try:
             try:
                 nltk.data.find(path)
             except LookupError:
+                # download quietly; may take time on first run
                 nltk.download(name, quiet=True)
 
-    ensure_nltk_data()
-    sia = SentimentIntensityAnalyzer()
+    # Try to ensure resources (non-fatal)
+    try:
+        ensure_nltk_data()
+        sia = SentimentIntensityAnalyzer()
+        NLTK_AVAILABLE = True
+    except Exception:
+        # If anything fails here, still attempt to create SIA (may raise later)
+        try:
+            sia = SentimentIntensityAnalyzer()
+            NLTK_AVAILABLE = True
+        except Exception:
+            NLTK_AVAILABLE = False
+            sia = None
 
-except Exception as e:
-    # If NLTK import fails on the platform, show friendly message and stop
-    st.set_page_config(page_title="Disaster Sentiment Dashboard", layout="wide")
-    st.title("🏆 Social Media & Sentiment Analysis for Disaster Management")
-    st.error(f"⚠️ NLTK import or resource setup failed: {e}\nPlease ensure 'nltk' is in requirements and redeploy.")
-    st.stop()
+except Exception:
+    NLTK_AVAILABLE = False
+    sia = None
+
+# If nltk not available, create a dummy SIA to avoid crashes (returns neutral)
+if not NLTK_AVAILABLE:
+    class _DummySIA:
+        def polarity_scores(self, t):
+            return {"compound": 0.0}
+    sia = _DummySIA()
 
 # ---------------- Streamlit setup ----------------
 st.set_page_config(page_title="Disaster Sentiment Dashboard", layout="wide")
 st.title("🏆 Social Media & Sentiment Analysis for Disaster Management")
+
+# If NLTK wasn't available, show a small warning (non-blocking)
+if not NLTK_AVAILABLE:
+    st.warning("NLTK not available on this environment — sentiment scores are neutral. Add 'nltk' to requirements and redeploy for real sentiment.")
 
 # ---------------- Data loader ----------------
 @st.cache_data
@@ -58,7 +85,7 @@ def load_data(default_path: str = "data/train.csv") -> pd.DataFrame:
 
 df = load_data()
 
-# Make sure essential cols exist
+# Validate columns
 required_cols = {"text"}
 if not required_cols.issubset(df.columns):
     st.error(f"CSV missing required column(s): {required_cols - set(df.columns)}")
@@ -85,7 +112,8 @@ def label_from_compound(c):
 
 @st.cache_data
 def score_sentiment(texts: pd.Series) -> pd.DataFrame:
-    scores = texts.apply(lambda t: sia.polarity_scores(t)["compound"])
+    # Use sia (either real or dummy) to compute compound
+    scores = texts.apply(lambda t: float(sia.polarity_scores(t)["compound"]))
     labels = scores.apply(label_from_compound)
     return pd.DataFrame({"compound": scores, "sentiment": labels})
 
@@ -116,28 +144,40 @@ c1, c2 = st.columns(2)
 
 with c1:
     st.subheader("Sentiment Distribution")
-    fig = px.pie(df_view, names="sentiment", title="Overall Sentiment Share")
-    st.plotly_chart(fig, use_container_width=True)
+    try:
+        fig = px.pie(df_view, names="sentiment", title="Overall Sentiment Share")
+        st.plotly_chart(fig, use_container_width=True)
+    except Exception as e:
+        st.error(f"Failed to draw pie chart: {e}")
 
 with c2:
     st.subheader("Most Frequent Words")
     wc_text = " ".join(df_view["clean_text"].tolist())
     if wc_text.strip():
-        wc = WordCloud(width=1000, height=500, background_color="white").generate(wc_text)
-        st.image(wc.to_array(), use_column_width=True)
+        if WORDCLOUD_AVAILABLE:
+            try:
+                wc = WordCloud(width=1000, height=500, background_color="white").generate(wc_text)
+                st.image(wc.to_array(), use_column_width=True)
+            except Exception as e:
+                st.error(f"WordCloud generation failed: {e}")
+        else:
+            st.info("WordCloud package not available. Add 'wordcloud' to requirements to see it.")
     else:
         st.info("No text available for wordcloud (after filters).")
 
 # If Kaggle dataset has 'target' (1=disaster, 0=not), show comparison
 if "target" in df_view.columns:
     st.subheader("Target vs Sentiment (Kaggle labels vs our model)")
-    fig2 = px.histogram(
-        df_view,
-        x="sentiment",
-        color=df_view["target"].map({1:"Disaster",0:"Not Disaster"}),
-        barmode="group",
-        text_auto=True
-    )
-    st.plotly_chart(fig2, use_container_width=True)
+    try:
+        fig2 = px.histogram(
+            df_view,
+            x="sentiment",
+            color=df_view["target"].map({1:"Disaster",0:"Not Disaster"}),
+            barmode="group",
+            text_auto=True
+        )
+        st.plotly_chart(fig2, use_container_width=True)
+    except Exception as e:
+        st.error(f"Failed to draw histogram: {e}")
 
 st.caption("Tip: use the sidebar to filter by keyword; drop your CSV in /data for auto-load.")
