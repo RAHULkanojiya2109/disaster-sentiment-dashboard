@@ -4,32 +4,39 @@ import pandas as pd
 import streamlit as st
 import plotly.express as px
 from wordcloud import WordCloud
-import nltk
-from nltk.sentiment.vader import SentimentIntensityAnalyzer
 
-# ---------------- NLTK setup (important fix) ----------------
-# Automatically ensure all required nltk data is available
-def ensure_nltk_data():
-    resources = {
-        "vader_lexicon": "sentiment/vader_lexicon",
-        "punkt": "tokenizers/punkt",
-        "stopwords": "corpora/stopwords",
-        "wordnet": "corpora/wordnet",
-        "omw-1.4": "corpora/omw-1.4"
-    }
-    for name, path in resources.items():
-        try:
-            nltk.data.find(path)
-        except LookupError:
-            nltk.download(name, quiet=True)
+# ---------------- NLTK setup (safe import + auto-download) ----------------
+try:
+    import nltk
+    from nltk.sentiment.vader import SentimentIntensityAnalyzer
 
-ensure_nltk_data()  # 👈 this will fix NLTK missing data error
+    def ensure_nltk_data():
+        resources = {
+            "vader_lexicon": "sentiment/vader_lexicon",
+            "punkt": "tokenizers/punkt",
+            "stopwords": "corpora/stopwords",
+            "wordnet": "corpora/wordnet",
+            "omw-1.4": "corpora/omw-1.4"
+        }
+        for name, path in resources.items():
+            try:
+                nltk.data.find(path)
+            except LookupError:
+                nltk.download(name, quiet=True)
+
+    ensure_nltk_data()
+    sia = SentimentIntensityAnalyzer()
+
+except Exception as e:
+    # If NLTK import fails on the platform, show friendly message and stop
+    st.set_page_config(page_title="Disaster Sentiment Dashboard", layout="wide")
+    st.title("🏆 Social Media & Sentiment Analysis for Disaster Management")
+    st.error(f"⚠️ NLTK import or resource setup failed: {e}\nPlease ensure 'nltk' is in requirements and redeploy.")
+    st.stop()
 
 # ---------------- Streamlit setup ----------------
 st.set_page_config(page_title="Disaster Sentiment Dashboard", layout="wide")
 st.title("🏆 Social Media & Sentiment Analysis for Disaster Management")
-
-sia = SentimentIntensityAnalyzer()
 
 # ---------------- Data loader ----------------
 @st.cache_data
