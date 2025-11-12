@@ -7,12 +7,27 @@ from wordcloud import WordCloud
 import nltk
 from nltk.sentiment.vader import SentimentIntensityAnalyzer
 
-# ---------------- Setup ----------------
+# ---------------- NLTK setup (important fix) ----------------
+# Automatically ensure all required nltk data is available
+def ensure_nltk_data():
+    resources = {
+        "vader_lexicon": "sentiment/vader_lexicon",
+        "punkt": "tokenizers/punkt",
+        "stopwords": "corpora/stopwords",
+        "wordnet": "corpora/wordnet",
+        "omw-1.4": "corpora/omw-1.4"
+    }
+    for name, path in resources.items():
+        try:
+            nltk.data.find(path)
+        except LookupError:
+            nltk.download(name, quiet=True)
+
+ensure_nltk_data()  # 👈 this will fix NLTK missing data error
+
+# ---------------- Streamlit setup ----------------
 st.set_page_config(page_title="Disaster Sentiment Dashboard", layout="wide")
 st.title("🏆 Social Media & Sentiment Analysis for Disaster Management")
-
-# NLTK resources (download once in this env)
-nltk.download("vader_lexicon", quiet=True)
 
 sia = SentimentIntensityAnalyzer()
 
@@ -109,8 +124,13 @@ with c2:
 # If Kaggle dataset has 'target' (1=disaster, 0=not), show comparison
 if "target" in df_view.columns:
     st.subheader("Target vs Sentiment (Kaggle labels vs our model)")
-    fig2 = px.histogram(df_view, x="sentiment", color=df_view["target"].map({1:"Disaster",0:"Not Disaster"}),
-                        barmode="group", text_auto=True)
+    fig2 = px.histogram(
+        df_view,
+        x="sentiment",
+        color=df_view["target"].map({1:"Disaster",0:"Not Disaster"}),
+        barmode="group",
+        text_auto=True
+    )
     st.plotly_chart(fig2, use_container_width=True)
 
 st.caption("Tip: use the sidebar to filter by keyword; drop your CSV in /data for auto-load.")
